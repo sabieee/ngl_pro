@@ -1,0 +1,68 @@
+<div class="container admin-theme">
+<script>document.body.classList.add('admin-page');</script>
+    <div class="header">
+        <h1>Admin Dashboard</h1>
+        <form method="POST" action="/admin/logout" style="display: inline;">
+            <button type="submit" class="logout-button">Logout</button>
+        </form>
+    </div>
+    
+    <h2 class="section-title">Active Conversations</h2>
+    
+    <div class="content">
+        {{#if conversations}}
+            <div class="conversation-list">
+                {{#each conversations}}
+                    <div class="conversation-card">
+                        <div class="conversation-top">
+                            <div class="conversation-meta">
+                                <span class="user-label">Anonymous User</span>
+                                <div class="message-badge">{{message_count}} messages</div>
+                            </div>
+                        </div>
+                        
+                        <div class="session-info">
+                            <p class="session-id">Session: {{id}}</p>
+                        </div>
+                        
+                        <div class="conversation-time-info">
+                            <p class="time-info">Created: {{formatDate created_at}}</p>
+                            <p class="time-info">Last activity: {{formatDate last_activity}}</p>
+                        </div>
+                        
+                        <a href="/admin/conversation/{{id}}" class="view-btn">View Conversation</a>
+                    </div>
+                {{/each}}
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <p>📭 No conversations yet. Share your anonymous message link to start receiving messages!</p>
+            </div>
+        {{/if}}
+    </div>
+</div>
+
+<script>
+// Auto-refresh admin dashboard every 5 seconds for new conversations
+setInterval(function() {
+    fetch(window.location.href)
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const newDoc = parser.parseFromString(html, 'text/html');
+            const newConversationList = newDoc.querySelector('.conversation-list');
+            const currentConversationList = document.querySelector('.conversation-list');
+            
+            if (newConversationList && currentConversationList) {
+                // Only update if content changed
+                if (newConversationList.innerHTML !== currentConversationList.innerHTML) {
+                    currentConversationList.innerHTML = newConversationList.innerHTML;
+                }
+            } else if (newConversationList && !currentConversationList) {
+                // First conversation received, reload page
+                window.location.reload();
+            }
+        })
+        .catch(error => console.log('Auto-refresh error:', error));
+}, 5000);
+</script>

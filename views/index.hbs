@@ -1,0 +1,182 @@
+<div class="container admin-theme">
+    <div class="header">
+        <h1>Anonymous Chat</h1>
+    </div>
+    
+    <div class="content">
+        {{#if (lookup (query) 'success')}}
+            <div class="alert alert-success">
+                Message sent!
+            </div>
+        {{/if}}
+        
+        {{#if (lookup (query) 'error')}}
+            <div class="alert alert-error">
+                {{#if (eq (lookup (query) 'error') 'empty')}}
+                    Please enter a message
+                {{else}}
+                    Failed to send message
+                {{/if}}
+            </div>
+        {{/if}}
+        
+        {{#if messages}}
+            <div class="messages">
+                {{#each messages}}
+                    <div class="message {{#if is_admin_reply}}admin{{else}}user{{/if}}">
+                        <p class="message-content">{{message}}</p>
+                    </div>
+                    <div class="message-time" data-timestamp="{{formatDate created_at}}">Loading...</div>
+                {{/each}}
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <p>👋 Start the conversation by sending your first anonymous message!</p>
+            </div>
+        {{/if}}
+        
+        <div class="message-form">
+            <form id="messageForm">
+                <div class="form-group">
+                    <label for="message">Your Anonymous Message:</label>
+                    <div class="message-input-container">
+                        <textarea name="message" id="message" placeholder="Ask me anything..(i will reply)" required rows="1"></textarea>
+                        <button type="submit" class="btn" id="sendBtn">➤</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-resize textarea
+const textarea = document.getElementById('message');
+textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+});
+
+// Auto-scroll to bottom
+const messages = document.querySelector('.messages');
+if (messages) {
+    messages.scrollTop = messages.scrollHeight;
+}
+
+// Handle form submission without page reload
+const messageForm = document.getElementById('messageForm');
+const sendBtn = document.getElementById('sendBtn');
+
+messageForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const message = textarea.value.trim();
+    if (!message) return;
+    
+    // Disable button and show sending state
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '⏳';
+    
+    // Send message via fetch
+    fetch('/send-message', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'message=' + encodeURIComponent(message)
+    })
+    .then(response => {
+        if (response.ok) {
+            // Clear the input
+            textarea.value = '';
+            textarea.style.height = 'auto';
+            
+            // Add message to chat immediately
+            addMessageToChat(message, false);
+            
+            // Re-enable button
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '➤';
+        } else {
+            throw new Error('Failed to send');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = '➤';
+        alert('Failed to send message. Please try again.');
+    });
+});
+
+// Function to add message to chat UI
+function addMessageToChat(message, isAdmin) {
+    let messagesContainer = document.querySelector('.messages');
+    
+    // If no messages container exists, create one
+    if (!messagesContainer) {
+        const emptyState = document.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+        
+        messagesContainer = document.createElement('div');
+        messagesContainer.className = 'messages';
+        document.querySelector('.content').insertBefore(messagesContainer, document.querySelector('.message-form'));
+    }
+    
+    // Create message element
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isAdmin ? 'admin' : 'user'}`;
+    
+    const messageContent = document.createElement('p');
+    messageContent.className = 'message-content';
+    messageContent.textContent = message;
+    
+    const messageTime = document.createElement('div');
+    messageTime.className = 'message-time';
+    // Use current time in user's timezone
+    const now = new Date();
+    messageTime.textContent = formatDateClient(now.toISOString());
+    
+    messageDiv.appendChild(messageContent);
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.appendChild(messageTime);
+    
+    // Scroll to bottom
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Auto-refresh for new messages every 3 seconds
+setInterval(function() {
+    // Only refresh if we're on the main page and not actively typing
+    if (window.location.pathname === '/' && document.activeElement !== textarea) {
+        fetch(window.location.href)
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const newDoc = parser.parseFromString(html, 'text/html');
+                const newMessages = newDoc.querySelector('.messages');
+                const currentMessages = document.querySelector('.messages');
+                
+                    if (newMessages && currentMessages) {
+                        // Only update if content changed
+                        if (newMessages.innerHTML !== currentMessages.innerHTML) {
+                            currentMessages.innerHTML = newMessages.innerHTML;
+                            // Convert timestamps in the new content
+                            const timeElements = currentMessages.querySelectorAll('.message-time[data-timestamp]');
+                            timeElements.forEach(function(element) {
+                                const timestamp = element.getAttribute('data-timestamp');
+                                element.textContent = formatDateClient(timestamp);
+                            });
+                            currentMessages.scrollTop = currentMessages.scrollHeight;
+                        }
+                } else if (newMessages && !currentMessages) {
+                    // First message received, reload page
+                    window.location.reload();
+                }
+            })
+            .catch(error => console.log('Auto-refresh error:', error));
+    }
+}, 3000);
+</script>

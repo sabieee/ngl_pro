@@ -1,0 +1,206 @@
+<div class="container admin-theme conversation-view">
+<script>document.body.classList.add('admin-page');</script>
+    <div class="header">
+        <div class="header-left">
+            <a href="/admin" class="back-button">← Back</a>
+            <h1>Anonymous User</h1>
+        </div>
+        <form method="POST" action="/admin/logout" style="display: inline;">
+            <button type="submit" class="logout-button">Logout</button>
+        </form>
+    </div>
+    
+    <div class="conversation-info">
+        <div class="info-item">
+            <span class="info-label">Started:</span>
+            <span class="info-value">{{formatDate conversation.created_at}}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Last seen:</span>
+            <span class="info-value">{{formatDate conversation.last_activity}}</span>
+        </div>
+    </div>
+    
+    <div class="content">
+        {{#if (lookup (query) 'success')}}
+            <div class="alert alert-success">
+                Message sent
+            </div>
+        {{/if}}
+        
+        {{#if (lookup (query) 'error')}}
+            <div class="alert alert-error">
+                {{#if (eq (lookup (query) 'error') 'empty')}}
+                    Please enter a message
+                {{else}}
+                    Failed to send message
+                {{/if}}
+            </div>
+        {{/if}}
+        
+        {{#if messages}}
+            <div class="messages">
+                {{#each messages}}
+                    <div class="message {{#if is_admin_reply}}admin{{else}}user{{/if}}">
+                        <p class="message-content">{{message}}</p>
+                        <div class="message-time" data-timestamp="{{formatDate created_at}}">Loading...</div>
+                    </div>
+                {{/each}}
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <p>No messages yet</p>
+            </div>
+        {{/if}}
+        
+        <div class="message-form">
+            <form id="replyForm" data-conversation-id="{{conversation.id}}">
+                <div class="form-group">
+                    <div class="message-input-container">
+                        <textarea name="reply" id="reply" placeholder="Type a message..." required rows="1"></textarea>
+                        <button type="submit" class="btn" id="replyBtn">➤</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-resize textarea
+    const replyTextarea = document.getElementById('reply');
+    if (replyTextarea) {
+        replyTextarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+        });
+    }
+
+    // Auto-scroll to bottom
+    const messages = document.querySelector('.messages');
+    if (messages) {
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    // Handle reply form submission without page reload
+    const replyForm = document.getElementById('replyForm');
+    const replyBtn = document.getElementById('replyBtn');
+    
+    if (!replyForm || !replyBtn) {
+        console.error('Reply form elements not found');
+        return;
+    }
+    
+    const conversationId = replyForm.dataset.conversationId;
+
+    replyForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const reply = replyTextarea.value.trim();
+        if (!reply) return;
+        
+        // Disable button and show sending state
+        replyBtn.disabled = true;
+        replyBtn.innerHTML = '⏳';
+        
+        // Send reply via fetch
+        fetch(`/admin/reply/${conversationId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'reply=' + encodeURIComponent(reply)
+        })
+        .then(response => {
+            if (response.ok) {
+                // Clear the input
+                replyTextarea.value = '';
+                replyTextarea.style.height = 'auto';
+                
+                // Add reply to chat immediately
+                addReplyToChat(reply, true);
+                
+                // Re-enable button
+                replyBtn.disabled = false;
+                replyBtn.innerHTML = '➤';
+            } else {
+                throw new Error('Failed to send reply');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            replyBtn.disabled = false;
+            replyBtn.innerHTML = '➤';
+            alert('Failed to send reply. Please try again.');
+        });
+    });
+
+    // Function to add reply to chat UI
+    function addReplyToChat(message, isAdmin) {
+        const messagesContainer = document.querySelector('.messages');
+        if (!messagesContainer) return;
+        
+        // Create message element
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isAdmin ? 'admin' : 'user'}`;
+        
+        const messageContent = document.createElement('p');
+        messageContent.className = 'message-content';
+        messageContent.textContent = message;
+        
+        const messageTime = document.createElement('div');
+        messageTime.className = 'message-time';
+        // Use current time in user's timezone
+        const now = new Date();
+        messageTime.textContent = formatDateClient(now.toISOString());
+        
+        messageDiv.appendChild(messageContent);
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.appendChild(messageTime);
+        
+        // Scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Auto-refresh for new messages every 3 seconds
+    setInterval(function() {
+        // Only refresh if not actively typing
+        if (document.activeElement !== replyTextarea) {
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const newDoc = parser.parseFromString(html, 'text/html');
+                    const newMessages = newDoc.querySelector('.messages');
+                    const currentMessages = document.querySelector('.messages');
+                    
+                    if (newMessages && currentMessages) {
+                        // Only update if content changed
+                        if (newMessages.innerHTML !== currentMessages.innerHTML) {
+                            const scrollTop = currentMessages.scrollTop;
+                            const scrollHeight = currentMessages.scrollHeight;
+                            const clientHeight = currentMessages.clientHeight;
+                            const wasAtBottom = scrollTop + clientHeight >= scrollHeight - 5;
+                            
+                            currentMessages.innerHTML = newMessages.innerHTML;
+                            
+                            // Convert timestamps in the new content
+                            const timeElements = currentMessages.querySelectorAll('.message-time[data-timestamp]');
+                            timeElements.forEach(function(element) {
+                                const timestamp = element.getAttribute('data-timestamp');
+                                element.textContent = formatDateClient(timestamp);
+                            });
+                            
+                            // Maintain scroll position or auto-scroll if was at bottom
+                            if (wasAtBottom) {
+                                currentMessages.scrollTop = currentMessages.scrollHeight;
+                            }
+                        }
+                    }
+                })
+                .catch(error => console.log('Auto-refresh error:', error));
+        }
+    }, 3000);
+});
+</script>
